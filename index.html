@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1" />
+<title>MediaSource Chunk Streaming Demo</title>
+</head>
+<body>
+
+<section>
+  <video controls autoplay width="640" height="480"></video>
+</section>
+
+<script>
+var video = document.querySelector('video');
+
+window.MediaSource = window.MediaSource || window.WebKitMediaSource;
+if (!!!window.MediaSource) {
+  alert('MediaSource API is not available');
+}
+
+var mediaSource = new MediaSource();
+
+video.src = window.URL.createObjectURL(mediaSource);
+
+function getCodecs(streams) {
+  var codecs = {};
+  codecs['audio'] = false;
+  codecs['video'] = false
+  streams.forEach(function(stream) {
+    codecs[stream.codec_type] = true;
+  });
+
+  var codecsProcessed = [];
+  if (codecs['audio']) {
+    codecsProcessed.push("vorbis");
+  }
+  if (codecs['video']) {
+    codecsProcessed.push("vp8");
+  }
+  return codecsProcessed.join();
+}
+
+function getArrayBuffer(url, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', url, true);
+  xhr.responseType = 'arraybuffer';
+  xhr.send();
+
+  xhr.onload = function(e) {
+    if (xhr.status != 200) {
+      alert("Unexpected status code " + xhr.status + " for " + url);
+      return false;
+    }
+    callback(xhr.response);
+  };
+}
+
+function readChunk(sourceBuffer, dataURL, i, chunkSize, callback) {
+  getArrayBuffer(dataURL + "/" + i, function(videoChunk) {
+    console.log("appending video chunk " + i);
+    sourceBuffer.timestampOffset = i * chunkSize;
+    sourceBuffer.appendBuffer(videoChunk);
+    
+    function endCallback() {
+      callback(i);
+      sourceBuffer.removeEventListener("updateend", endCallback);
+    }
+    sourceBuffer.addEventListener("updateend", endCallback);
+  });
+}
+
+var NOT_LOADED = 0;
+var LOADING = 1;
+var LOADED = 2;
+
+function callback(e) {
+  var dataURL = "http://localhost:3000/video/%2Fhome%2Ftstableford%2FDownloads%2FThe%20Pretty%20Reckless%20-%20Seven%20Nation%20Army%20(Live%20In%20Argentina%202012).mp4";
+  
+  // Fetch each part and append it.
+  httpGetAsync(dataURL, function(data) {
+    var json = JSON.parse(data);
+
+    var sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="' + getCodecs(json.streams) + '"');
+    mediaSource.duration = json.format.duration;
+    var numChunks = Math.ceil(json.format.duration / json.format.chunk_size);
+    console.log("num chunks = " + numChunks);
+    
+    var loadMap = [];
+    for (var i = 0; i < numChunks; i++) {
+      loadMap[i] = NOT_LOADED;
+    }
+    
+    // Tends to take chunk size / 2 to convert and load.
+    // Set as minimum incase some chunks are buffered and others not.
+    var maxLoadTime = 0;
+
+    function timeUpdate() {
+        var chunkNum = Math.floor(video.currentTime / json.format.chunk_size);
+        // Check if current chunk loaded.
+        if (loadMap[chunkNum] == LOADED) {
+          // If it is see if there's another we need to load.
+          if (chunkNum < numChunks - 1 && (video.buffered.end(0) - video.currentTime) < Math.ceil(maxLoadTime * 1.3) ) {
+            chunkNum++;
+          }
+        }
+        // Actually load it if it's not loaded.
+        if (loadMap[chunkNum] == NOT_LOADED) {
+          loadMap[chunkNum] = LOADING;
+          var startTime = Date.now();
+          readChunk(sourceBuffer, dataURL, chunkNum, json.format.chunk_size, function(chunk) {
+            var loadTime = Date.now() - startTime;
+            console.log("load time is " + loadTime/1000);
+            if (loadTime > maxLoadTime) {
+              // First chunks seems to load about twice as fast as subsequent ones.
+              if (chunkNum == 0) {
+                loadTime = loadTime * 2;
+              }
+              maxLoadTime = loadTime / 1000;
+            }
+            if (video.paused && chunk == 0) {
+              video.play(); // Start playing after 1st chunk is appended.
+            }
+            var allLoaded = true;
+            for (var k = 0; k < numChunks; k++) {
+              if (!loadMap[k]) {
+                allLoaded = false;
+                break;
+              }
+            }
+            if (allLoaded) {
+              console.log("end of stream");
+              mediaSource.endOfStream();
+            }
+            loadMap[chunkNum] = LOADED;
+          });
+        }
+    }
+    // Add listener to keep an eye on loading.
+    video.addEventListener('timeupdate', timeUpdate, false);
+    // Load initial chunk
+    timeUpdate(0);
+  });
+}
+
+mediaSource.addEventListener('sourceopen', callback, false);
+mediaSource.addEventListener('webkitsourceopen', callback, false);
+
+mediaSource.addEventListener('webkitsourceended', function(e) {
+  console.log('mediaSource readyState: ' + this.readyState);
+}, false);
+
+function httpGetAsync(url, callback)
+{
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.onreadystatechange = function() { 
+        if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
+            callback(xmlHttp.responseText);
+    }
+    xmlHttp.open("GET", url, true); // true for asynchronous 
+    xmlHttp.send(null);
+}
+</script>
+</body>
+</html>
