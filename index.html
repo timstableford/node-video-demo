@@ -20,9 +20,7 @@ if (!!!window.MediaSource) {
   alert('MediaSource API is not available');
 }
 
-var mediaSource;// = new MediaSource();
-
-//video.src = window.URL.createObjectURL(mediaSource);
+var mediaSource;
 
 // Create radio list
 var radio_home = document.getElementById("radio_home");
@@ -77,8 +75,12 @@ function getArrayBuffer(url, callback) {
 function readChunk(sourceBuffer, dataURL, i, chunkSize, callback) {
   getArrayBuffer(dataURL + "/" + i, function(videoChunk) {
     console.log("appending video chunk " + i);
-    sourceBuffer.timestampOffset = i * chunkSize;
-    sourceBuffer.appendBuffer(videoChunk);
+    try {
+      sourceBuffer.timestampOffset = i * chunkSize;
+      sourceBuffer.appendBuffer(videoChunk);
+    } catch (err) {
+      console.log(err);
+    }
     
     function endCallback() {
       callback(i);
@@ -168,6 +170,10 @@ window.onload = function() {
         var ele = document.getElementsByName('videos');
         for (var j = 0; j < ele.length; j++) {
           if (ele[j].checked) {
+            // Remove existing listeners by resetting the node.
+            elClone = video.cloneNode(true);
+            video.parentNode.replaceChild(elClone, video);
+            video = elClone;
             mediaSource = new MediaSource();
             console.log("/video/" + encodeURIComponent(ele[j].value));
             function loadCallback() {
