@@ -1,1 +1,5 @@
 Demo to show transcoding and streaming to a HTML5 video element in chunks.
+
+Depends on:
+- ffmpeg (the official one compiled with all the goodies)
+- https://github.com/acolwell/mse-tools - mse_webm_remuxer

@@ -89,7 +89,7 @@ var getPart = function(input, startTime, callback) {
       var processStartTime = Date.now();
       ffm.on('end', function(data) {
         // When it's done transcoding it needs to be in the correct WebM Byte Stream format.
-        child_process.execFile('/home/tstableford/go/bin/mse_webm_remuxer', [outputFile, remuxFile], function(error, stdout, stderr) {
+        child_process.execFile('mse_webm_remuxer', [outputFile, remuxFile], function(error, stdout, stderr) {
           fs.unlink(outputFile, function() {});
           if (error) {
             console.log(stdout);
