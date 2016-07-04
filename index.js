@@ -8,7 +8,7 @@ var app = express();
 
 var chunkSize = 30; // seconds
 
-var args = ['-threads', '4', '-c:a', 'libvorbis', '-b:v', '1M', '-crf', '18', '-f', 'webm'];
+var args = ['-threads', '6', '-c:v', 'libvpx', '-c:a', 'libvorbis', '-b:v', '1M', '-crf', '18', '-f', 'webm'];
 var tmpdir = os.tmpdir() + '/' + 'node-video';
 
 var currentlyProcessingFiles = [];
@@ -90,6 +90,7 @@ var getPart = function(input, startTime, callback) {
       ffm.on('end', function(data) {
         // When it's done transcoding it needs to be in the correct WebM Byte Stream format.
         child_process.execFile('/home/tstableford/go/bin/mse_webm_remuxer', [outputFile, remuxFile], function(error, stdout, stderr) {
+          fs.unlink(outputFile, function() {});
           if (error) {
             console.log(stdout);
             console.log(stderr);
@@ -108,6 +109,18 @@ var getPart = function(input, startTime, callback) {
     }
   });
 }
+
+// Get video list
+app.get('/video', function(req, res) {
+  fs.readdir(path.resolve(__dirname, 'videos'), function(err, items) {
+    var videos = [];
+    for (var i = 0; i < items.length; i++) {
+        var file = path.resolve(__dirname, 'videos', items[i]);
+        videos.push(file);
+    }
+    res.send(videos);
+  });
+});
 
 // Get video meta data.
 app.get('/video/:video', function (req, res) {

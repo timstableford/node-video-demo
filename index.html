@@ -10,7 +10,8 @@
 <section>
   <video controls autoplay width="640" height="480"></video>
 </section>
-
+<div id="radio_home">
+</div>
 <script>
 var video = document.querySelector('video');
 
@@ -19,9 +20,26 @@ if (!!!window.MediaSource) {
   alert('MediaSource API is not available');
 }
 
-var mediaSource = new MediaSource();
+var mediaSource;// = new MediaSource();
 
-video.src = window.URL.createObjectURL(mediaSource);
+//video.src = window.URL.createObjectURL(mediaSource);
+
+// Create radio list
+var radio_home = document.getElementById("radio_home");
+
+function makeRadioButton(name, value, text) {
+  var label = document.createElement("label");
+  var radio = document.createElement("input");
+  radio.type = "radio";
+  radio.name = name;
+  radio.value = value;
+
+  label.appendChild(radio);
+
+  label.appendChild(document.createTextNode(text));
+  label.appendChild(document.createElement("br"));
+  return label;
+}
 
 function getCodecs(streams) {
   var codecs = {};
@@ -36,7 +54,7 @@ function getCodecs(streams) {
     codecsProcessed.push("vorbis");
   }
   if (codecs['video']) {
-    codecsProcessed.push("vp8");
+    codecsProcessed.push("vp9");
   }
   return codecsProcessed.join();
 }
@@ -74,13 +92,11 @@ var NOT_LOADED = 0;
 var LOADING = 1;
 var LOADED = 2;
 
-function callback(e) {
-  var dataURL = "http://localhost:3000/video/%2Fhome%2Ftstableford%2FDownloads%2FThe%20Pretty%20Reckless%20-%20Seven%20Nation%20Army%20(Live%20In%20Argentina%202012).mp4";
-  
+function loadVideo(dataURL) {
   // Fetch each part and append it.
   httpGetAsync(dataURL, function(data) {
     var json = JSON.parse(data);
-
+  
     var sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="' + getCodecs(json.streams) + '"');
     mediaSource.duration = json.format.duration;
     var numChunks = Math.ceil(json.format.duration / json.format.chunk_size);
@@ -94,47 +110,47 @@ function callback(e) {
     // Tends to take chunk size / 2 to convert and load.
     // Set as minimum incase some chunks are buffered and others not.
     var maxLoadTime = 0;
-
+  
     function timeUpdate() {
-        var chunkNum = Math.floor(video.currentTime / json.format.chunk_size);
-        // Check if current chunk loaded.
-        if (loadMap[chunkNum] == LOADED) {
-          // If it is see if there's another we need to load.
-          if (chunkNum < numChunks - 1 && (video.buffered.end(0) - video.currentTime) < Math.ceil(maxLoadTime * 1.3) ) {
-            chunkNum++;
+      var chunkNum = Math.floor(video.currentTime / json.format.chunk_size);
+      // Check if current chunk loaded.
+      if (loadMap[chunkNum] == LOADED && video.buffered.length > 0) {
+        // If it is see if there's another we need to load.
+        if (chunkNum < numChunks - 1 && (video.buffered.end(0) - video.currentTime) < Math.ceil(maxLoadTime * 1.3) ) {
+          chunkNum++;
+        }
+      }
+      // Actually load it if it's not loaded.
+      if (loadMap[chunkNum] == NOT_LOADED) {
+        loadMap[chunkNum] = LOADING;
+        var startTime = Date.now();
+        readChunk(sourceBuffer, dataURL, chunkNum, json.format.chunk_size, function(chunk) {
+          var loadTime = Date.now() - startTime;
+          console.log("load time is " + loadTime/1000);
+          if (loadTime > maxLoadTime) {
+            // First chunks seems to load about twice as fast as subsequent ones.
+            if (chunkNum == 0) {
+              loadTime = loadTime * 2;
+            }
+            maxLoadTime = loadTime / 1000;
           }
-        }
-        // Actually load it if it's not loaded.
-        if (loadMap[chunkNum] == NOT_LOADED) {
-          loadMap[chunkNum] = LOADING;
-          var startTime = Date.now();
-          readChunk(sourceBuffer, dataURL, chunkNum, json.format.chunk_size, function(chunk) {
-            var loadTime = Date.now() - startTime;
-            console.log("load time is " + loadTime/1000);
-            if (loadTime > maxLoadTime) {
-              // First chunks seems to load about twice as fast as subsequent ones.
-              if (chunkNum == 0) {
-                loadTime = loadTime * 2;
-              }
-              maxLoadTime = loadTime / 1000;
+          if (video.paused && chunk == 0) {
+            video.play(); // Start playing after 1st chunk is appended.
+          }
+          var allLoaded = true;
+          for (var k = 0; k < numChunks; k++) {
+            if (!loadMap[k]) {
+              allLoaded = false;
+              break;
             }
-            if (video.paused && chunk == 0) {
-              video.play(); // Start playing after 1st chunk is appended.
-            }
-            var allLoaded = true;
-            for (var k = 0; k < numChunks; k++) {
-              if (!loadMap[k]) {
-                allLoaded = false;
-                break;
-              }
-            }
-            if (allLoaded) {
-              console.log("end of stream");
-              mediaSource.endOfStream();
-            }
-            loadMap[chunkNum] = LOADED;
-          });
-        }
+          }
+          if (allLoaded) {
+            console.log("end of stream");
+            mediaSource.endOfStream();
+          }
+          loadMap[chunkNum] = LOADED;
+        });
+      }
     }
     // Add listener to keep an eye on loading.
     video.addEventListener('timeupdate', timeUpdate, false);
@@ -143,15 +159,33 @@ function callback(e) {
   });
 }
 
-mediaSource.addEventListener('sourceopen', callback, false);
-mediaSource.addEventListener('webkitsourceopen', callback, false);
+window.onload = function() {
+  httpGetAsync("/video", function(data) {
+    var json = JSON.parse(data);
+    for (var i = 0; i < json.length; i++) {
+      var button = makeRadioButton("videos", json[i], json[i]);
+      button.onclick = function() {
+        var ele = document.getElementsByName('videos');
+        for (var j = 0; j < ele.length; j++) {
+          if (ele[j].checked) {
+            mediaSource = new MediaSource();
+            console.log("/video/" + encodeURIComponent(ele[j].value));
+            function loadCallback() {
+              loadVideo("/video/" + encodeURIComponent(ele[j].value));
+            }
+            video.src = window.URL.createObjectURL(mediaSource);
+            mediaSource.addEventListener('sourceopen', loadCallback, false);
+            mediaSource.addEventListener('webkitsourceopen', loadCallback, false);
+            break;
+          }
+        }
+      }
+      radio_home.appendChild(button);
+    }
+  });
+}
 
-mediaSource.addEventListener('webkitsourceended', function(e) {
-  console.log('mediaSource readyState: ' + this.readyState);
-}, false);
-
-function httpGetAsync(url, callback)
-{
+function httpGetAsync(url, callback) {
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() { 
         if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
